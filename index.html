@@ -256,37 +256,126 @@ select {
 
       // Computer move (O)
       if (gameMode === 'computer' && currentPlayer === 'O') {
-        setTimeout(computerMove, 500);
+        setTimeout(computerMove, 1000);
       }
     }
 
-    function computerMove() {
-      if (gameOver) return;
+   function computerMove() {
+  if (gameOver) return;
 
-      let bi = activeBoard;
-      if (bi < 0 || boards[bi].winner) {
-        const availableBoards = boards.map((b, i) => b.winner ? null : i).filter(i => i !== null);
-        if (availableBoards.length === 0) return;
-        bi = availableBoards[Math.floor(Math.random() * availableBoards.length)];
+  function isWinningMove(board, player, cellIdx) {
+    const test = board.cells.slice();
+    test[cellIdx] = player;
+    return wins.some(line => line.every(i => test[i] === player));
+  }
+
+  function findBlockingMove(board, player) {
+    const opp = player === 'O' ? 'X' : 'O';
+    for (let i = 0; i < 9; i++) {
+      if (board.cells[i] === '' && isWinningMove(board, opp, i)) return i;
+    }
+    return null;
+  }
+
+  function findFutureThreat(board, player) {
+    const opp = player === 'O' ? 'X' : 'O';
+    for (let i = 0; i < 9; i++) {
+      if (board.cells[i] === '') {
+        board.cells[i] = opp;
+        const threat = findBlockingMove(board, player);
+        board.cells[i] = '';
+        if (threat !== null) return i;
       }
+    }
+    return null;
+  }
 
-      const board = boards[bi];
-      const emptyCells = board.cells.map((c, i) => c === '' ? i : null).filter(i => i !== null);
-      if (emptyCells.length === 0) {
-        // Fallback: mark board as draw if full (should already be handled elsewhere)
-        boards[bi].winner = 'D';
-        highlightActive();
-        return;
+  function isDangerousRedirect(cellIdx) {
+    const targetBoard = boards[cellIdx];
+    if (!targetBoard || targetBoard.winner) return false;
+    return isWinningMove(targetBoard, 'X', findBlockingMove(targetBoard, 'O'));
+  }
+
+  function scoreMove(board, player, cellIdx) {
+    let score = 0;
+    if (isWinningMove(board, player, cellIdx)) score += 100;
+    if (isWinningMove(board, player === 'O' ? 'X' : 'O', cellIdx)) score += 50;
+    if (!isDangerousRedirect(cellIdx)) score += 20;
+    if (cellIdx === 4) score += 10; // center
+    if ([0, 2, 6, 8].includes(cellIdx)) score += 5; // corners
+    return score;
+  }
+
+  function findSmartestMove(board, player) {
+    let bestScore = -Infinity, bestMove = null;
+    for (let i = 0; i < 9; i++) {
+      if (board.cells[i] === '') {
+        const moveScore = scoreMove(board, player, i);
+        if (moveScore > bestScore) {
+          bestScore = moveScore;
+          bestMove = i;
+        }
       }
-      const ci = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+    }
+    return bestMove;
+  }
 
-      const cellEl = [...document.querySelectorAll('.cell')].find(c =>
-        +c.dataset.board === bi && +c.dataset.cell === ci
-      );
+  let bi = activeBoard;
+  let ci;
 
-      if (cellEl) cellEl.click();
+  if (bi < 0 || boards[bi].winner) {
+    let bestBoard = null, bestCell = null;
+
+    for (let b = 0; b < 9; b++) {
+      if (boards[b].winner) continue;
+      const blockMove = findBlockingMove(boards[b], 'O');
+      if (blockMove !== null) {
+        bestBoard = b;
+        bestCell = blockMove;
+        break;
+      }
     }
 
+    if (bestBoard === null) {
+      for (let b = 0; b < 9; b++) {
+        if (boards[b].winner) continue;
+        const winMove = findSmartestMove(boards[b], 'O');
+        if (winMove !== null && isWinningMove(boards[b], 'O', winMove)) {
+          bestBoard = b;
+          bestCell = winMove;
+          break;
+        }
+      }
+    }
+
+    if (bestBoard === null) {
+      const availableBoards = boards.map((b, i) => b.winner ? null : i).filter(i => i !== null);
+      if (availableBoards.length === 0) return;
+      bestBoard = availableBoards[Math.floor(Math.random() * availableBoards.length)];
+      bestCell = findSmartestMove(boards[bestBoard], 'O');
+    }
+
+    bi = bestBoard;
+    ci = bestCell;
+  } else {
+    ci = findSmartestMove(boards[bi], 'O');
+  }
+
+  if (ci === null || boards[bi].cells[ci] !== '') {
+    const emptyCells = boards[bi].cells.map((c, i) => c === '' ? i : null).filter(i => i !== null);
+    if (emptyCells.length === 0) {
+      boards[bi].winner = 'D';
+      highlightActive();
+      return;
+    }
+    ci = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+  }
+
+  const cellEl = [...document.querySelectorAll('.cell')].find(c =>
+    +c.dataset.board === bi && +c.dataset.cell === ci
+  );
+  if (cellEl) cellEl.click();
+}
     function endGame(text) {
       setMessage(text);
       gameOver = true;
@@ -318,13 +407,21 @@ select {
     }
 
     function celebrate() {
-      const colors = ['#f44336','#e91e63','#ffeb3b','#4caf50','#2196f3','#9c27b0'];
+      let colors, emoji;
+      if (currentPlayer === 'X') {
+        colors = ['#f44336', '#e91e63', '#ffeb3b', '#4caf50', '#2196f3', '#9c27b0'];
+        emoji = '🎉';
+      } else {
+        colors = ['#607d8b', '#90a4ae', '#bdbdbd', '#78909c', '#cfd8dc', '#eeeeee'];
+        emoji = '😢';
+      }
       for (let i = 0; i < 150; i++) {
         const conf = document.createElement('div');
         conf.className = 'confetti';
         conf.style.left = Math.random() * 100 + '%';
         conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
         conf.style.animationDuration = (Math.random() * 1 + 2) + 's';
+        conf.textContent = emoji;
         document.body.append(conf);
         setTimeout(() => conf.remove(), 3000);
       }
