@@ -49,7 +49,6 @@
       padding: 8px 16px; font-size: 16px; margin-top: 10px;
       cursor: pointer;
     }
-    /* Rules overlay */
     #rulesOverlay {
       position: fixed;
       top: 0; left: 0;
@@ -65,7 +64,6 @@
     .rules-content ul {
       text-align: left; margin: 15px 0;
     }
-    /* confetti */
     @keyframes fall {
       0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
       100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
@@ -75,6 +73,11 @@
       width: 6px; height: 6px; border-radius: 50%;
       pointer-events: none;
       animation-name: fall; animation-timing-function: linear;
+    }
+    select {
+      margin-top: 10px;
+      padding: 6px;
+      font-size: 16px;
     }
   </style>
 </head>
@@ -88,6 +91,12 @@
         <li>First to get three in a row on any small board <strong>wins the game</strong>.</li>
         <li>If all boards fill and no one wins, the game is a draw.</li>
       </ul>
+      <label for="modeSelect">Choose Mode:</label>
+      <select id="modeSelect">
+        <option value="multiplayer">Multiplayer</option>
+        <option value="computer">Play vs Computer</option>
+      </select>
+      <br>
       <button id="startBtn">Start Game</button>
     </div>
   </div>
@@ -103,8 +112,10 @@
     const restartBtn = document.getElementById('restart');
     const rulesOverlay = document.getElementById('rulesOverlay');
     const startBtn   = document.getElementById('startBtn');
+    const modeSelect = document.getElementById('modeSelect');
 
-    let boards, currentPlayer, activeBoard, gameOver;
+    let boards, currentPlayer, activeBoard, gameOver, gameMode;
+
     const wins = [
       [0,1,2],[3,4,5],[6,7,8],
       [0,3,6],[1,4,7],[2,5,8],
@@ -112,9 +123,12 @@
     ];
 
     startBtn.addEventListener('click', () => {
+      gameMode = modeSelect.value;
       rulesOverlay.style.display = 'none';
       initGame();
     });
+
+    restartBtn.addEventListener('click', initGame);
 
     function initGame() {
       boards = Array.from({ length: 9 }, () => ({
@@ -159,7 +173,7 @@
       e.target.textContent = currentPlayer;
       e.target.classList.add('disabled');
 
-      // small-board win?
+      // Check small-board win
       if (wins.some(line => line.every(i => board.cells[i] === currentPlayer))) {
         board.winner = currentPlayer;
         const sbEl = bigBoardEl.children[bi];
@@ -170,22 +184,54 @@
         return;
       }
 
-      // small-board draw
+      // Small-board draw
       if (board.cells.every(c => c)) {
         board.winner = 'D';
       }
 
-      // overall draw?
+      // Overall draw?
       if (boards.every(b => b.winner)) {
         endGame('Draw');
         return;
       }
 
-      // next player
+      // Next player and next active board
       currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
       activeBoard = boards[ci].winner ? -1 : ci;
       setMessage(`Player ${currentPlayer}, play ${activeBoard < 0 ? 'any square' : 'board '+(activeBoard+1)}`);
       highlightActive();
+
+      // Computer move (O)
+      if (gameMode === 'computer' && currentPlayer === 'O') {
+        setTimeout(computerMove, 500);
+      }
+    }
+
+    function computerMove() {
+      if (gameOver) return;
+
+      let bi = activeBoard;
+      if (bi < 0 || boards[bi].winner) {
+        const availableBoards = boards.map((b, i) => b.winner ? null : i).filter(i => i !== null);
+        if (availableBoards.length === 0) return;
+        bi = availableBoards[Math.floor(Math.random() * availableBoards.length)];
+      }
+
+      const board = boards[bi];
+      const emptyCells = board.cells.map((c, i) => c === '' ? i : null).filter(i => i !== null);
+      if (emptyCells.length === 0) {
+        // Fallback: mark board as draw if full (should already be handled elsewhere)
+        boards[bi].winner = 'D';
+        highlightActive();
+        return;
+      }
+      const ci = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+
+      const cellEl = [...document.querySelectorAll('.cell')].find(c =>
+        +c.dataset.board === bi && +c.dataset.cell === ci
+      );
+
+      if (cellEl) cellEl.click();
     }
 
     function endGame(text) {
@@ -200,7 +246,21 @@
 
     function highlightActive() {
       Array.from(bigBoardEl.children).forEach((sb, i) => {
-        sb.style.opacity = (activeBoard < 0 || i === activeBoard) ? '1' : '0.4';
+        const boardWon = !!boards[i].winner;
+        const enabledBoard = (activeBoard < 0 || i === activeBoard) && !boardWon && !gameOver;
+        sb.style.opacity = enabledBoard ? '1' : '0.4';
+
+        Array.from(sb.children).forEach(cell => {
+          const cellIndex = +cell.dataset.cell;
+          const isEmpty = boards[i].cells[cellIndex] === '';
+          if (gameOver || boardWon) {
+            cell.classList.add('disabled');
+          } else if (enabledBoard && isEmpty) {
+            cell.classList.remove('disabled');
+          } else {
+            cell.classList.add('disabled');
+          }
+        });
       });
     }
 
@@ -216,8 +276,6 @@
         setTimeout(() => conf.remove(), 3000);
       }
     }
-
-    restartBtn.addEventListener('click', initGame);
   </script>
 </body>
 </html>
