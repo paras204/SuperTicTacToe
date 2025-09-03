@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Super Tic Tac Toe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      font-family: sans-serif; background: #f0f0f0; padding: 20px;
+      overflow-x: hidden;
+    }
+    h1 { margin-bottom: 10px; }
+    #message { margin: 10px 0; font-weight: bold; font-size: 1.2em; }
+    #bigBoard {
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: 8px;
+    }
+    .small-board {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      grid-template-rows: repeat(3, 60px);
+      gap: 4px;
+      padding: 4px;
+      background: #fff;
+      border: 3px solid #333;
+      position: relative;
+    }
+    .small-board.won-X::after,
+    .small-board.won-O::after {
+      content: attr(data-winner);
+      position: absolute;
+      font-size: 48px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: rgba(0,0,0,0.2);
+    }
+    .cell {
+      background: #eee;
+      border: 1px solid #333;
+      display: flex; justify-content: center; align-items: center;
+      font-size: 24px; cursor: pointer;
+    }
+    .cell.disabled { pointer-events: none; opacity: 0.6; }
+    button {
+      padding: 8px 16px; font-size: 16px; margin-top: 10px;
+      cursor: pointer;
+    }
+    /* Rules overlay */
+    #rulesOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.8);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .rules-content {
+      background: #fff; padding: 20px; border-radius: 8px;
+      max-width: 400px; text-align: center;
+    }
+    .rules-content ul {
+      text-align: left; margin: 15px 0;
+    }
+    /* confetti */
+    @keyframes fall {
+      0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
+    }
+    .confetti {
+      position: absolute; top: -10px;
+      width: 6px; height: 6px; border-radius: 50%;
+      pointer-events: none;
+      animation-name: fall; animation-timing-function: linear;
+    }
+  </style>
+</head>
+<body>
+  <div id="rulesOverlay">
+    <div class="rules-content">
+      <h1>Game Rules</h1>
+      <ul>
+        <li>X always starts.</li>
+        <li>Players alternate placing their mark (X or O).</li>
+        <li>First to get three in a row on any small board <strong>wins the game</strong>.</li>
+        <li>If all boards fill and no one wins, the game is a draw.</li>
+      </ul>
+      <button id="startBtn">Start Game</button>
+    </div>
+  </div>
+
+  <h1>Super Tic Tac Toe</h1>
+  <p id="message"></p>
+  <div id="bigBoard"></div>
+  <button id="restart">Restart</button>
+
+  <script>
+    const bigBoardEl = document.getElementById('bigBoard');
+    const messageEl  = document.getElementById('message');
+    const restartBtn = document.getElementById('restart');
+    const rulesOverlay = document.getElementById('rulesOverlay');
+    const startBtn   = document.getElementById('startBtn');
+
+    let boards, currentPlayer, activeBoard, gameOver;
+    const wins = [
+      [0,1,2],[3,4,5],[6,7,8],
+      [0,3,6],[1,4,7],[2,5,8],
+      [0,4,8],[2,4,6]
+    ];
+
+    startBtn.addEventListener('click', () => {
+      rulesOverlay.style.display = 'none';
+      initGame();
+    });
+
+    function initGame() {
+      boards = Array.from({ length: 9 }, () => ({
+        cells: Array(9).fill(''),
+        winner: null
+      }));
+      currentPlayer = 'X';
+      activeBoard = -1; // any board
+      gameOver = false;
+      bigBoardEl.innerHTML = '';
+
+      for (let bi = 0; bi < 9; bi++) {
+        const sb = document.createElement('div');
+        sb.className = 'small-board';
+        sb.dataset.index = bi;
+        sb.dataset.winner = '';
+        for (let ci = 0; ci < 9; ci++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.board = bi;
+          cell.dataset.cell = ci;
+          cell.addEventListener('click', onCellClick);
+          sb.append(cell);
+        }
+        bigBoardEl.append(sb);
+      }
+
+      setMessage(`Player ${currentPlayer}, play any square`);
+      highlightActive();
+    }
+
+    function onCellClick(e) {
+      if (gameOver) return;
+      const bi = +e.target.dataset.board;
+      const ci = +e.target.dataset.cell;
+      if (activeBoard >= 0 && bi !== activeBoard) return;
+
+      const board = boards[bi];
+      if (board.cells[ci]) return;
+
+      board.cells[ci] = currentPlayer;
+      e.target.textContent = currentPlayer;
+      e.target.classList.add('disabled');
+
+      // small-board win?
+      if (wins.some(line => line.every(i => board.cells[i] === currentPlayer))) {
+        board.winner = currentPlayer;
+        const sbEl = bigBoardEl.children[bi];
+        sbEl.classList.add(`won-${currentPlayer}`);
+        sbEl.dataset.winner = currentPlayer;
+        celebrate();
+        endGame(`Player ${currentPlayer} wins!`);
+        return;
+      }
+
+      // small-board draw
+      if (board.cells.every(c => c)) {
+        board.winner = 'D';
+      }
+
+      // overall draw?
+      if (boards.every(b => b.winner)) {
+        endGame('Draw');
+        return;
+      }
+
+      // next player
+      currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+      activeBoard = boards[ci].winner ? -1 : ci;
+      setMessage(`Player ${currentPlayer}, play ${activeBoard < 0 ? 'any square' : 'board '+(activeBoard+1)}`);
+      highlightActive();
+    }
+
+    function endGame(text) {
+      setMessage(text);
+      gameOver = true;
+      document.querySelectorAll('.cell').forEach(c => c.classList.add('disabled'));
+    }
+
+    function setMessage(txt) {
+      messageEl.textContent = txt;
+    }
+
+    function highlightActive() {
+      Array.from(bigBoardEl.children).forEach((sb, i) => {
+        sb.style.opacity = (activeBoard < 0 || i === activeBoard) ? '1' : '0.4';
+      });
+    }
+
+    function celebrate() {
+      const colors = ['#f44336','#e91e63','#ffeb3b','#4caf50','#2196f3','#9c27b0'];
+      for (let i = 0; i < 150; i++) {
+        const conf = document.createElement('div');
+        conf.className = 'confetti';
+        conf.style.left = Math.random() * 100 + '%';
+        conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        conf.style.animationDuration = (Math.random() * 1 + 2) + 's';
+        document.body.append(conf);
+        setTimeout(() => conf.remove(), 3000);
+      }
+    }
+
+    restartBtn.addEventListener('click', initGame);
+  </script>
+</body>
+</html>
